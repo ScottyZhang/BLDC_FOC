@@ -1,118 +1,186 @@
 /******************************************************************************
-	IoT Motor Driver Example
+    IoT Motor Driver Example - MCPWM 3-phase complementary + Dead Time
 ******************************************************************************/
 #include "Arduino.h"
+#include "driver/mcpwm.h"
+#include "soc/mcpwm_periph.h"
 
-//PWM输出引脚定义
-int pwmA = 16;
-int pwmB = 18;
-int pwmC = 19;
+// =========== 你的核心变量及函数声明 ===========
 
+// 三对互补引脚：U相 (UH,UL)、V相 (VH,VL)、W相 (WH,WL)
 int UH = 16, UL = 17;
 int VH = 18, VL = 23;
 int WH = 19, WL = 33;
 
-
-//宏定义实现的一个约束函数,用于限制一个值的范围。
-#define _constrain(amt,low,high) ((amt)<(low)?(low):((amt)>(high)?(high):(amt)))
-
+// 电源电压 (假设用于计算占空比)
 float voltage_power_supply = 5.0;
-float shaft_angle = 0,open_loop_timestamp=0;
-float zero_electric_angle=0,Ualpha,Ubeta=0,Ua=0,Ub=0,Uc=0,dc_a=0,dc_b=0,dc_c=0;
+
+// 一些与开环控制相关的变量
+float shaft_angle = 0, open_loop_timestamp = 0;
+float zero_electric_angle = 0;
+float Ualpha, Ubeta = 0, Ua = 0, Ub = 0, Uc = 0;
+float dc_a = 0, dc_b = 0, dc_c = 0;
+
+// 死区时长(微秒)。你可根据需求调整
+static const uint32_t DEADTIME_RISING  = 1;  // 上升沿死区
+static const uint32_t DEADTIME_FALLING = 1;  // 下降沿死区
 
 
-// 电角度求解
-float _electricalAngle(float shaft_angle, int pole_pairs) {
-  return (shaft_angle * pole_pairs);
-}
-
-// 归一化角度到 [0,2PI]
-float _normalizeAngle(float angle){
-  float a = fmod(angle, 2*PI);   //取余运算可以用于归一化，列出特殊值例子算便知
-  return a >= 0 ? a : (a + 2*PI);  
-  //三目运算符。格式：condition ? expr1 : expr2 
-  //其中，condition 是要求值的条件表达式，如果条件成立，则返回 expr1 的值，否则返回 expr2 的值。可以将三目运算符视为 if-else 语句的简化形式。
-  //fmod 函数的余数的符号与除数相同。因此，当 angle 的值为负数时，余数的符号将与 _2PI 的符号相反。也就是说，如果 angle 的值小于 0 且 _2PI 的值为正数，则 fmod(angle, _2PI) 的余数将为负数。
-  //例如，当 angle 的值为 -PI/2，_2PI 的值为 2PI 时，fmod(angle, _2PI) 将返回一个负数。在这种情况下，可以通过将负数的余数加上 _2PI 来将角度归一化到 [0, 2PI] 的范围内，以确保角度的值始终为正数。
-}
+// --- 辅助函数声明 ---
+float _electricalAngle(float shaft_angle, int pole_pairs);
+float _normalizeAngle(float angle);
+float velocityOpenloop(float target_velocity);
+void setPwm(float Ua, float Ub, float Uc);
+void setPhaseVoltage(float Uq, float Ud, float angle_el);
 
 
-// 设置PWM到控制器输出
-void setPwm(float Ua, float Ub, float Uc) {
-
-  // 计算占空比
-  // 限制占空比从0到1
-  dc_a = _constrain(Ua / voltage_power_supply, 0.0f , 1.0f );
-  dc_b = _constrain(Ub / voltage_power_supply, 0.0f , 1.0f );
-  dc_c = _constrain(Uc / voltage_power_supply, 0.0f , 1.0f );
-
-  //写入PWM到PWM 0 1 2 通道
-  ledcWrite(0, dc_a*255);
-  ledcWrite(1, dc_b*255);
-  ledcWrite(2, dc_c*255);
-}
-
-void setPhaseVoltage(float Uq,float Ud, float angle_el) {
-  angle_el = _normalizeAngle(angle_el + zero_electric_angle);
-  // 帕克逆变换
-  Ualpha =  -Uq*sin(angle_el); 
-  Ubeta =   Uq*cos(angle_el); 
-
-  // 克拉克逆变换
-  Ua = Ualpha + voltage_power_supply/2;
-  Ub = (sqrt(3)*Ubeta-Ualpha)/2 + voltage_power_supply/2;
-  Uc = (-Ualpha-sqrt(3)*Ubeta)/2 + voltage_power_supply/2;
-  setPwm(Ua,Ub,Uc);
-}
-
-//开环速度函数
-float velocityOpenloop(float target_velocity){
-  unsigned long now_us = micros();  //获取从开启芯片以来的微秒数，它的精度是 4 微秒。 micros() 返回的是一个无符号长整型（unsigned long）的值
-  
-  //计算当前每个Loop的运行时间间隔
-  float Ts = (now_us - open_loop_timestamp) * 1e-6f;
-  Serial.print("Ts = ");
-  Serial.println(now_us - open_loop_timestamp);
-  //由于 micros() 函数返回的时间戳会在大约 70 分钟之后重新开始计数，在由70分钟跳变到0时，TS会出现异常，因此需要进行修正。如果时间间隔小于等于零或大于 0.5 秒，则将其设置为一个较小的默认值，即 1e-3f
-  if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
-  
-
-  // 通过乘以时间间隔和目标速度来计算需要转动的机械角度，存储在 shaft_angle 变量中。在此之前，还需要对轴角度进行归一化，以确保其值在 0 到 2π 之间。
-  shaft_angle = _normalizeAngle(shaft_angle + target_velocity*Ts);
-  //以目标速度为 10 rad/s 为例，如果时间间隔是 1 秒，则在每个循环中需要增加 10 * 1 = 10 弧度的角度变化量，才能使电机转动到目标速度。
-  //如果时间间隔是 0.1 秒，那么在每个循环中需要增加的角度变化量就是 10 * 0.1 = 1 弧度，才能实现相同的目标速度。因此，电机轴的转动角度取决于目标速度和时间间隔的乘积。
-
-  // 使用早前设置的voltage_power_supply的1/3作为Uq值，这个值会直接影响输出力矩
-  // 最大只能设置为Uq = voltage_power_supply/2，否则ua,ub,uc会超出供电电压限幅
-  float Uq = voltage_power_supply/3;
-  
-  setPhaseVoltage(Uq,  0, _electricalAngle(shaft_angle, 7));
-  
-  open_loop_timestamp = now_us;  //用于计算下一个时间间隔
-
-  return Uq;
-}
-
+// =========== setup()：初始化 MCPWM 输出 ===========
 void setup() {
   Serial.begin(115200);
-  //PWM设置
-  pinMode(pwmA, OUTPUT);
-  pinMode(pwmB, OUTPUT);
-  pinMode(pwmC, OUTPUT);
-  ledcAttachPin(pwmA, 0);
-  ledcAttachPin(pwmB, 1);
-  ledcAttachPin(pwmC, 2);
-  ledcSetup(0, 5000, 8);  //pwm频道, 频率, 精度
-  ledcSetup(1, 5000, 8);  //pwm频道, 频率, 精度
-  ledcSetup(2, 5000, 8);  //pwm频道, 频率, 精度
-  Serial.println("PWM Init Finish");
+
+  // --- 1) 绑定 MCPWM 到对应引脚 ---
+  // U相：对应 MCPWM_TIMER_0 -> MCPWM0A / MCPWM0B
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, UH);  // 高侧(UH)
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, UL);  // 低侧(UL)
+
+  // V相：对应 MCPWM_TIMER_1 -> MCPWM1A / MCPWM1B
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, VH);  // 高侧(VH)
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1B, VL);  // 低侧(VL)
+
+  // W相：对应 MCPWM_TIMER_2 -> MCPWM2A / MCPWM2B
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2A, WH);  // 高侧(WH)
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2B, WL);  // 低侧(WL)
+
+
+  // --- 2) 设置 MCPWM 的频率、占空比等 ---
+  //    这里给 3 个定时器使用相同的配置；你可按需调整频率或其它参数。
+  //    占空比起始值为 50%，计数方式为向上，Duty模式为 Active High。
+  mcpwm_config_t pwm_config;
+  pwm_config.frequency = 20000;       // PWM频率：20kHz示例(可改为5kHz,10kHz等)
+  pwm_config.cmpr_a = 50.0;          // 通道A初始占空比(%)
+  pwm_config.cmpr_b = 50.0;          // 通道B初始占空比(%)
+  pwm_config.counter_mode = MCPWM_UP_COUNTER;
+  pwm_config.duty_mode = MCPWM_DUTY_MODE_0; // Active High
+
+  // 初始化 U相 (Timer0)
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
+  // 将 B 通道设为互补(Active Low)
+  mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
+
+  // 初始化 V相 (Timer1)
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);
+  mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
+
+  // 初始化 W相 (Timer2)
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_2, &pwm_config);
+  mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_2, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
+
+
+  // --- 3) 启用硬件死区 ---
+  // 在互补波形切换时插入 1us / 1us 的死区(仅示例，可根据需要调整)
+  // mode 使用 MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE
+  mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_0,
+                        MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
+                        DEADTIME_RISING,   // 上升沿死区
+                        DEADTIME_FALLING); // 下降沿死区
+
+  mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_1,
+                        MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
+                        DEADTIME_RISING,
+                        DEADTIME_FALLING);
+
+  mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_2,
+                        MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
+                        DEADTIME_RISING,
+                        DEADTIME_FALLING);
+
+  // 说明：MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE表示A通道为主动高，B通道互补，插入死区
+  // 如果你需要其它极性，也可用 MCPWM_ACTIVE_LOW_COMPLIMENT_MODE 等模式
+
+  Serial.println("MCPWM (3-phase complementary) + Dead Time Init Finished.");
   delay(3000);
 }
 
 
-
-
+// =========== loop()：开环让电机以 5rad/s 旋转 ===========
 void loop() {
-  // put your main code here, to run repeatedly:
-   velocityOpenloop(5);
+  velocityOpenloop(20);  // 目标速度(示例)
+}
+
+
+// =================================================================
+// ========== 下面是原本就有的开环逻辑和辅助函数 ==========
+// (仅把 LEDC 调用替换成 MCPWM 调用，尽量少改动)
+
+// 计算并输出 3 相PWM (Ua, Ub, Uc)
+void setPwm(float Ua, float Ub, float Uc) {
+  // 1) 限制占空比在 0~1
+  float dc_a = constrain(Ua / voltage_power_supply, 0.0f , 1.0f );
+  float dc_b = constrain(Ub / voltage_power_supply, 0.0f , 1.0f );
+  float dc_c = constrain(Uc / voltage_power_supply, 0.0f , 1.0f );
+
+  // 2) MCPWM 的占空比设置范围是 (0~100.0)
+  float dutyA = dc_a * 100.0f;
+  float dutyB = dc_b * 100.0f;
+  float dutyC = dc_c * 100.0f;
+
+  // U相 (Timer0) -> A(高侧), B(低侧=互补)
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, dutyA);
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_B, dutyA);
+
+  // V相 (Timer1)
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, dutyB);
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_B, dutyB);
+
+  // W相 (Timer2)
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_2, MCPWM_OPR_A, dutyC);
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_2, MCPWM_OPR_B, dutyC);
+}
+
+// 计算三相的 (Ua, Ub, Uc) 并调用 setPwm
+void setPhaseVoltage(float Uq, float Ud, float angle_el) {
+  // 归一化电角度
+  angle_el = fmod(angle_el + zero_electric_angle, 2*PI);
+  if(angle_el < 0) angle_el += 2*PI;
+
+  // 逆帕克变换
+  Ualpha = -Uq * sin(angle_el);
+  Ubeta  =  Uq * cos(angle_el);
+
+  // 克拉克逆变换
+  Ua = Ualpha + voltage_power_supply/2;
+  Ub = (sqrt(3)*Ubeta - Ualpha)/2 + voltage_power_supply/2;
+  Uc = (-Ualpha - sqrt(3)*Ubeta)/2 + voltage_power_supply/2;
+
+  setPwm(Ua, Ub, Uc);
+}
+
+// 简易开环速度控制示例
+float velocityOpenloop(float target_velocity){
+  unsigned long now_us = micros();
+  float Ts = (now_us - open_loop_timestamp)*1e-6f;
+  if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
+
+  // 累积计算轴角度(机械角度)
+  shaft_angle += target_velocity*Ts;
+  shaft_angle = fmod(shaft_angle, 2*PI);
+  if(shaft_angle < 0) shaft_angle += 2*PI;
+
+  // 给定一个固定的 Uq (等效驱动电压占电源电压的一部分)
+  float Uq = voltage_power_supply/3;
+
+  // 设极对数=7，计算电角度并调用 setPhaseVoltage
+  setPhaseVoltage(Uq, 0, _electricalAngle(shaft_angle, 7));
+
+  open_loop_timestamp = now_us;
+  return Uq;
+}
+
+float _electricalAngle(float shaft_angle, int pole_pairs) {
+  return shaft_angle * pole_pairs;
+}
+
+float _normalizeAngle(float angle){
+  float a = fmod(angle, 2*PI);
+  return a >= 0 ? a : (a + 2*PI);
 }
