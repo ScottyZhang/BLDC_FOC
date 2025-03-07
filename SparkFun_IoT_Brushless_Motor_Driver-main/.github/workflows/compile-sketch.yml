@@ -1,0 +1,47 @@
+name: Cross-compilation
+
+on:
+  - push
+  #- pull_request
+
+
+jobs:
+  compile-sketch:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        board:
+
+          # ESP32
+          # https://github.com/espressif/arduino-esp32/blob/master/boards.txt
+          - fqbn: esp32:esp32:esp32thing_plus_c
+            platforms: |
+              - name: esp32:esp32
+                source-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Branch name
+        run: echo running on branch ${GITHUB_REF##*/}
+
+      - name: Compile Sketch
+        uses: arduino/compile-sketches@v1.1.0
+        with:
+          platforms: ${{ matrix.board.platforms }}
+          fqbn: ${{ matrix.board.fqbn }}
+          libraries: |
+            - source-path: ./
+            - name: Simple FOC
+          sketch-paths: |
+            - Examples/IoT_Motor_WiFi_Access
+          enable-warnings-report: true
+          enable-deltas-report: true
+          verbose: true
+
+    # outputs:
+    #   report-artifact-name: ${{ steps.report-artifact-name.outputs.report-artifact-name }}
+
