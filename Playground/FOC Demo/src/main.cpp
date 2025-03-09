@@ -1,5 +1,12 @@
 /******************************************************************************
     IoT Motor Driver Example - MCPWM 3-phase complementary + Dead Time
+    Velocity Open Loop Control
+    通过给定期望速度，计算出Uq的大小。之后和一个模拟出来的电角度一起通过“帕克逆变换”得到Ualpha和Ubeta，
+    再经过克拉克逆变换得到Ua,Ub和Uc三个相的电压，就可以控制无刷电机的转动了。
+    
+    ******************************************************************************
+    [注意]：“Uq = voltage_power_supply / 3” 只是“固定给电机施加一个与电源电压成固定比例的电压幅值”，
+    并没有和给定速度做任何算法关联。在这段演示代码里，它被写死成常数，以保证输出三相电压波形不会饱和或超出供电范围。
 ******************************************************************************/
 #include "Arduino.h"
 #include "driver/mcpwm.h"
@@ -33,69 +40,16 @@ float velocityOpenloop(float target_velocity);
 void setPwm(float Ua, float Ub, float Uc);
 void setPhaseVoltage(float Uq, float Ud, float angle_el);
 
+void initPWM();
+
+
+
 
 // =========== setup()：初始化 MCPWM 输出 ===========
 void setup() {
   Serial.begin(115200);
-
-  // --- 1) 绑定 MCPWM 到对应引脚 ---
-  // U相：对应 MCPWM_TIMER_0 -> MCPWM0A / MCPWM0B
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, UH);  // 高侧(UH)
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, UL);  // 低侧(UL)
-
-  // V相：对应 MCPWM_TIMER_1 -> MCPWM1A / MCPWM1B
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, VH);  // 高侧(VH)
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1B, VL);  // 低侧(VL)
-
-  // W相：对应 MCPWM_TIMER_2 -> MCPWM2A / MCPWM2B
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2A, WH);  // 高侧(WH)
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2B, WL);  // 低侧(WL)
-
-
-  // --- 2) 设置 MCPWM 的频率、占空比等 ---
-  //    这里给 3 个定时器使用相同的配置；你可按需调整频率或其它参数。
-  //    占空比起始值为 50%，计数方式为向上，Duty模式为 Active High。
-  mcpwm_config_t pwm_config;
-  pwm_config.frequency = 20000;       // PWM频率：20kHz示例(可改为5kHz,10kHz等)
-  pwm_config.cmpr_a = 50.0;          // 通道A初始占空比(%)
-  pwm_config.cmpr_b = 50.0;          // 通道B初始占空比(%)
-  pwm_config.counter_mode = MCPWM_UP_COUNTER;
-  pwm_config.duty_mode = MCPWM_DUTY_MODE_0; // Active High
-
-  // 初始化 U相 (Timer0)
-  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
-  // 将 B 通道设为互补(Active Low)
-  mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
-
-  // 初始化 V相 (Timer1)
-  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);
-  mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
-
-  // 初始化 W相 (Timer2)
-  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_2, &pwm_config);
-  mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_2, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
-
-
-  // --- 3) 启用硬件死区 ---
-  // 在互补波形切换时插入 1us / 1us 的死区(仅示例，可根据需要调整)
-  // mode 使用 MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE
-  mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_0,
-                        MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
-                        DEADTIME_RISING,   // 上升沿死区
-                        DEADTIME_FALLING); // 下降沿死区
-
-  mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_1,
-                        MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
-                        DEADTIME_RISING,
-                        DEADTIME_FALLING);
-
-  mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_2,
-                        MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
-                        DEADTIME_RISING,
-                        DEADTIME_FALLING);
-
-  // 说明：MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE表示A通道为主动高，B通道互补，插入死区
-  // 如果你需要其它极性，也可用 MCPWM_ACTIVE_LOW_COMPLIMENT_MODE 等模式
+  initPWM();
+ 
 
   Serial.println("MCPWM (3-phase complementary) + Dead Time Init Finished.");
   delay(3000);
@@ -107,9 +61,69 @@ void loop() {
   velocityOpenloop(20);  // 目标速度(示例)
 }
 
+void initPWM(){
+  // --- 1) 绑定 MCPWM 到对应引脚 ---
+ // U相：对应 MCPWM_TIMER_0 -> MCPWM0A / MCPWM0B
+ mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, UH);  // 高侧(UH)
+ mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, UL);  // 低侧(UL)
 
-// =================================================================
-// ========== 下面是原本就有的开环逻辑和辅助函数 ==========
+ // V相：对应 MCPWM_TIMER_1 -> MCPWM1A / MCPWM1B
+ mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, VH);  // 高侧(VH)
+ mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1B, VL);  // 低侧(VL)
+
+ // W相：对应 MCPWM_TIMER_2 -> MCPWM2A / MCPWM2B
+ mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2A, WH);  // 高侧(WH)
+ mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM2B, WL);  // 低侧(WL)
+
+
+ // --- 2) 设置 MCPWM 的频率、占空比等 ---
+ //    这里给 3 个定时器使用相同的配置；你可按需调整频率或其它参数。
+ //    占空比起始值为 50%，计数方式为向上，Duty模式为 Active High。
+ mcpwm_config_t pwm_config;
+ pwm_config.frequency = 20000;       // PWM频率：20kHz示例(可改为5kHz,10kHz等)
+ pwm_config.cmpr_a = 50.0;          // 通道A初始占空比(%)
+ pwm_config.cmpr_b = 50.0;          // 通道B初始占空比(%)
+ pwm_config.counter_mode = MCPWM_UP_COUNTER;
+ pwm_config.duty_mode = MCPWM_DUTY_MODE_0; // Active High
+
+ // 初始化 U相 (Timer0)
+ mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
+ // 将 B 通道设为互补(Active Low)
+ mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
+
+ // 初始化 V相 (Timer1)
+ mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);
+ mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
+
+ // 初始化 W相 (Timer2)
+ mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_2, &pwm_config);
+ mcpwm_set_duty_type(MCPWM_UNIT_0, MCPWM_TIMER_2, MCPWM_OPR_B, MCPWM_DUTY_MODE_1);
+
+
+ // --- 3) 启用硬件死区 ---
+ // 在互补波形切换时插入 1us / 1us 的死区(仅示例，可根据需要调整)
+ // mode 使用 MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE
+ mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_0,
+                       MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
+                       DEADTIME_RISING,   // 上升沿死区
+                       DEADTIME_FALLING); // 下降沿死区
+
+ mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_1,
+                       MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
+                       DEADTIME_RISING,
+                       DEADTIME_FALLING);
+
+ mcpwm_deadtime_enable(MCPWM_UNIT_0, MCPWM_TIMER_2,
+                       MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE,
+                       DEADTIME_RISING,
+                       DEADTIME_FALLING);
+
+ // 说明：MCPWM_ACTIVE_HIGH_COMPLIMENT_MODE表示A通道为主动高，B通道互补，插入死区
+ // 如果你需要其它极性，也可用 MCPWM_ACTIVE_LOW_COMPLIMENT_MODE 等模式
+
+}
+
+
 // (仅把 LEDC 调用替换成 MCPWM 调用，尽量少改动)
 
 // 计算并输出 3 相PWM (Ua, Ub, Uc)
