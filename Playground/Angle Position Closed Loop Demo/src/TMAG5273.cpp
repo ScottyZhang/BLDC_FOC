@@ -2601,13 +2601,13 @@ float TMAG5273::getZData()
     return zOut;
 }
 
-/// @brief Returns the angle measurement result in degree. The data
+/// @brief Returns the angle measurement result in Rad. The data
 ///  displayed from 0 to 360 degree in 13 LSB bits after combining the
 ///  MSB and LSB bits. The 4 LSB bits allocated for fraction of an angle
 ///  in the format (xxx/16).
 ///     TMAG5273_REG_ANGLE_RESULT_MSB
 ///     TMAG5273_REG_ANGLE_RESULT_LSB
-/// @return Angle measurement result in degrees (float value)
+/// @return Angle measurement result in Rad (float value)
 float TMAG5273::getAngleResult()
 {
     uint8_t angleLSB = 0;
@@ -2636,7 +2636,7 @@ float TMAG5273::getAngleResult()
 
     // Add the two values together now
     finalVal = angleVal + decValue;
-    finalVal = (finalVal/180)*2*PI;
+    finalVal = (finalVal/180)*PI;
     return finalVal;
 }
 

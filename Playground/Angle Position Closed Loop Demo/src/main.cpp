@@ -57,10 +57,10 @@ void loop()
     // if(Tsensor.getMagneticChannel() != 0) 
     // {
   
-      float angle = Tsensor.getAngleResult();
-      Serial.print("X: ");
-      Serial.print(angle, 4);
-      Serial.println("Rad");
+      // float angle = Tsensor.getAngleResult();
+      // Serial.print("X: ");
+      // Serial.print(angle, 4);
+      // Serial.println("Rad");
     // }-
     // else
     // {

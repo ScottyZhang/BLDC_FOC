@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 0)
+  (lib (name "SparkFun_IoT_Brushless_Motor_Driver PCB-eagle-import")(type "KiCad")(uri "${KIPRJMOD}/SparkFun_IoT_Brushless_Motor_Driver PCB-eagle-import.kicad_sym")(options "")(descr ""))
+)

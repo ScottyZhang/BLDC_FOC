@@ -20,7 +20,7 @@ float dc_a = 0, dc_b = 0, dc_c = 0;
 
 //**********************闭环控制****************************** */
 int DIR = 1;
-float Kp = -0.12;
+float Kp = -0.015;
 float Ki = 0.5;
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
@@ -162,16 +162,17 @@ void initPWM(){
     }
     
     void cali_zero_electric_angle(){
-        setPhaseVoltage(3, 0,_3PI_2);
-        delay(3000);
+        setPhaseVoltage(2.5, 0,_3PI_2);
+        delay(500);
         zero_electric_angle=_electricalAngle();
         setPhaseVoltage(0, 0,_3PI_2);
     }
 
 
-  void pos_closedLoop(int motor_target){
+  void pos_closedLoop(float motor_target){
     float err = motor_target - DIR*Tsensor.getAngleResult();
-    float target_Uq = constrain((Kp* err)*180/PI,-2.48,2.48);
+    float target_Uq = constrain((Kp* err)*180/PI,-1.5,1.5);
     setPhaseVoltage(target_Uq, 0, _electricalAngle());
-
+    Serial.print("Target Uq:");
+    Serial.println(target_Uq);
   }
