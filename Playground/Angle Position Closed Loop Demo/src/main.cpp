@@ -70,6 +70,6 @@ void loop()
     // }
     // velocityOpenloop(15);
 
-    pos_closedLoop(2);
+    pos_closedLoop(3);
     serialReceiveUserCommand();
 }
