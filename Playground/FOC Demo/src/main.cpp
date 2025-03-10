@@ -183,8 +183,8 @@ float velocityOpenloop(float target_velocity){
   // 给定一个固定的 Uq (等效驱动电压占电源电压的一部分)
   float Uq = voltage_power_supply/3;
 
-  // 设极对数=7，计算电角度并调用 setPhaseVoltage
-  setPhaseVoltage(Uq, 0, _electricalAngle(shaft_angle, 7));
+  // 设极对数=8，计算电角度并调用 setPhaseVoltage
+  setPhaseVoltage(Uq, 0, _electricalAngle(shaft_angle, 8));
 
   open_loop_timestamp = now_us;
   return Uq;

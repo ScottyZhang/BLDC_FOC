@@ -1,76 +1,75 @@
-#include <Arduino.h>
+#include "Wire.h"
+#include "TMAG5273.h"
+#include "Arduino.h"
+#include "FOC.h"
 
-#include <Wire.h>
 
-#define TMAG5273_ADDR 0x35  // 7-bit I2C 设备地址
 #define SCL_PIN 22          // ESP32 SCL
 #define SDA_PIN 21          // ESP32 SDA
 
-// TMAG5273 相关寄存器地址
-#define TMAG5273_REG_DEVICE_ID      0x0D  // 设备 ID
-#define TMAG5273_REG_ANGLE_MSB      0x19  // 角度高字节
-#define TMAG5273_REG_ANGLE_LSB      0x1A  // 角度低字节
-#define TMAG5273_REG_X_MSB          0x12  // X 轴高字节
-#define TMAG5273_REG_X_LSB          0x13  // X 轴低字节
+TMAG5273 Tsensor; // Initialize hall-effect sensor
 
-// I2C 读取 1 字节寄存器
-uint8_t readRegister(uint8_t reg) {
-    Wire.beginTransmission(TMAG5273_ADDR);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom(TMAG5273_ADDR, 1);
-    return Wire.available() ? Wire.read() : 0;
+// I2C default address
+uint8_t i2cAddress = TMAG5273_I2C_ADDRESS_INITIAL;
+
+void setup() 
+{
+  Wire.begin();
+  // Start serial communication at 115200 baud
+  Serial.begin(115200);  
+
+  delay(200);
+  // If begin is successful (0), then start example
+  if(Tsensor.begin(i2cAddress, Wire) == 1)
+  {
+    Serial.println("Begin");
+  }
+  else // Otherwise, infinite loop
+  {
+    Serial.println("Device failed to setup - Freezing code.");
+    while(1); // Runs forever
+  }
+
+  
+  Tsensor.setConvAvg(TMAG5273_X32_CONVERSION);
+
+
+  // Choose new angle to calculate from
+  // Can calculate angles between XYX, YXY, YZY, and XZX
+  Tsensor.setMagneticChannel(TMAG5273_XYX_ENABLE);
+
+  // Enable the angle calculation register
+  // Can choose between XY, YZ, or XZ priority
+  Tsensor.setAngleEn(TMAG5273_XY_ANGLE_CALCULATION);
+  Tsensor.setGlitchFilter(TMAG5273_GLITCH_ON);
+
+  cali_zero_electric_angle();
+  initPWM();
+
+
+
 }
 
-// 读取 12-bit 数据（MSB + LSB）
-int16_t readRegister12(uint8_t msbReg, uint8_t lsbReg) {
-    Wire.beginTransmission(TMAG5273_ADDR);
-    Wire.write(msbReg);
-    Wire.endTransmission(false);
-    Wire.requestFrom(TMAG5273_ADDR, 2);
 
-    if (Wire.available() < 2) return 0;
+void loop() 
+{
+    // // Checks if mag channels are on - turns on in setup
+    // if(Tsensor.getMagneticChannel() != 0) 
+    // {
+  
+      float angle = Tsensor.getAngleResult();
+      Serial.print("X: ");
+      Serial.print(angle, 4);
+      Serial.println("Rad");
+    // }-
+    // else
+    // {
+    //   // If there is an issue, stop the magnetic readings and restart sensor/example
+    //   Serial.println("Mag Channels disabled, stopping..");
+    //   while(1);
+    // }
+    // velocityOpenloop(15);
 
-    uint8_t msb = Wire.read();
-    uint8_t lsb = Wire.read();
-    return (msb << 4) | (lsb >> 4);  // 12-bit 数据
-}
-
-// 读取设备 ID
-void readDeviceID() {
-    uint8_t device_id = readRegister(TMAG5273_REG_DEVICE_ID);
-    Serial.print("TMAG5273 Device ID: 0x");
-    Serial.println(device_id, HEX);
-}
-
-// 读取角度数据（0° ~ 360°）
-float readAngle() {
-    int16_t raw_angle = readRegister12(TMAG5273_REG_ANGLE_MSB, TMAG5273_REG_ANGLE_LSB);
-    return raw_angle * 360.0 / 4096.0;  // 转换为角度
-}
-
-// 读取 X 轴磁场数据
-int16_t readXAxis() {
-    return readRegister12(TMAG5273_REG_X_MSB, TMAG5273_REG_X_LSB);
-}
-
-void setup() {
-    Serial.begin(115200);
-    Wire.begin(SDA_PIN, SCL_PIN);
-    delay(100);
-
-    readDeviceID();  // 读取设备 ID
-}
-
-void loop() {
-    int16_t x_axis = readXAxis();
-    float angle = readAngle();
-
-    Serial.print("X Axis: ");
-    Serial.print(x_axis);
-    Serial.print(" | Angle: ");
-    Serial.print(angle, 2);
-    Serial.println("°");
-
-    delay(500);
+    pos_closedLoop(2);
+    serialReceiveUserCommand();
 }
