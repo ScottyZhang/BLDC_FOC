@@ -3,6 +3,7 @@
 #define MOTOR_POLE_PAIR 8
 #define _3PI_2 4.71238898038f
 #define WIND_UP 12.0f
+#define _SQRT3_2 0.866025403784438f
 
 
 // 三对互补引脚：U相 (UH,UL)、V相 (VH,VL)、W相 (WH,WL)
@@ -11,7 +12,7 @@ int VH = 18, VL = 23;
 int WH = 19, WL = 33;
 
 // 电源电压 (假设用于计算占空比)
-float voltage_power_supply = 8.0;
+float voltage_power_supply = 5.0;
 
 // 一些与开环控制相关的变量
 float shaft_angle = 0, open_loop_timestamp = 0;
@@ -21,8 +22,8 @@ float dc_a = 0, dc_b = 0, dc_c = 0;
 
 //**********************闭环控制****************************** */
 int DIR = 1;
-float Kp = 3.8;
-float Ki = 1.1;
+float Kp = 2.0;
+float Ki = 1.2;
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
 
@@ -132,8 +133,8 @@ void initPWM(){
   
     // 克拉克逆变换
     Ua = Ualpha + voltage_power_supply/2;
-    Ub = (sqrt(3)*Ubeta - Ualpha)/2 + voltage_power_supply/2;
-    Uc = (-Ualpha - sqrt(3)*Ubeta)/2 + voltage_power_supply/2;
+    Ub = (_SQRT3_2*Ubeta - 0.5f*Ualpha) + voltage_power_supply/2;
+    Uc = (-Ualpha*0.5f - _SQRT3_2*Ubeta) + voltage_power_supply/2;
 
 
     setPwm(Ua, Ub, Uc);
