@@ -31,12 +31,12 @@ void setup()
   }
 
   
-  Tsensor.setConvAvg(TMAG5273_X32_CONVERSION);
+  Tsensor.setConvAvg(TMAG5273_X16_CONVERSION);
 
 
   // Choose new angle to calculate from
   // Can calculate angles between XYX, YXY, YZY, and XZX
-  Tsensor.setMagneticChannel(TMAG5273_XYX_ENABLE);
+  Tsensor.setMagneticChannel(TMAG5273_YXY_ENABLE);
 
   // Enable the angle calculation register
   // Can choose between XY, YZ, or XZ priority
@@ -49,6 +49,20 @@ void setup()
 
 
 }
+
+
+float target_pos = 1.5;
+float serialReceiveUserCommand() {
+    
+  while (Serial.available()) {
+    // get the new byte:
+    target_pos = Serial.parseFloat();
+     
+
+
+    }
+    return target_pos;
+  }
 
 
 void loop() 
@@ -69,7 +83,7 @@ void loop()
     //   while(1);
     // }
     // velocityOpenloop(15);
-
-    pos_closedLoop(3);
+    
+    pos_closedLoop(target_pos);
     serialReceiveUserCommand();
 }

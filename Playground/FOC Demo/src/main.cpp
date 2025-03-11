@@ -20,7 +20,7 @@ int VH = 18, VL = 23;
 int WH = 19, WL = 33;
 
 // 电源电压 (假设用于计算占空比)
-float voltage_power_supply = 5.0;
+float voltage_power_supply = 8.0;
 
 // 一些与开环控制相关的变量
 float shaft_angle = 0, open_loop_timestamp = 0;
@@ -58,7 +58,9 @@ void setup() {
 
 // =========== loop()：开环让电机以 5rad/s 旋转 ===========
 void loop() {
-  velocityOpenloop(20);  // 目标速度(示例)
+  float _Uq = velocityOpenloop(40);  // 目标速度(示例)
+  Serial.print("Uq = ");
+  Serial.println(_Uq);
 }
 
 void initPWM(){
@@ -184,7 +186,7 @@ float velocityOpenloop(float target_velocity){
   float Uq = voltage_power_supply/3;
 
   // 设极对数=8，计算电角度并调用 setPhaseVoltage
-  setPhaseVoltage(Uq, 0, _electricalAngle(shaft_angle, 8));
+  setPhaseVoltage(Uq, 0, _electricalAngle(shaft_angle, 7));
 
   open_loop_timestamp = now_us;
   return Uq;

@@ -2,6 +2,7 @@
 
 #define MOTOR_POLE_PAIR 8
 #define _3PI_2 4.71238898038f
+#define WIND_UP 12.0f
 
 
 // 三对互补引脚：U相 (UH,UL)、V相 (VH,VL)、W相 (WH,WL)
@@ -10,18 +11,18 @@ int VH = 18, VL = 23;
 int WH = 19, WL = 33;
 
 // 电源电压 (假设用于计算占空比)
-float voltage_power_supply = 5.0;
+float voltage_power_supply = 8.0;
 
 // 一些与开环控制相关的变量
-float shaft_angle = 0;
+float shaft_angle = 0, open_loop_timestamp = 0;
 float zero_electric_angle = 0;
 float Ualpha, Ubeta = 0, Ua = 0, Ub = 0, Uc = 0;
 float dc_a = 0, dc_b = 0, dc_c = 0;
 
 //**********************闭环控制****************************** */
 int DIR = 1;
-float Kp = -0.015;
-float Ki = 0.5;
+float Kp = 3.8;
+float Ki = 1.1;
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
 
@@ -48,7 +49,7 @@ void initPWM(){
    //    这里给 3 个定时器使用相同的配置；你可按需调整频率或其它参数。
    //    占空比起始值为 50%，计数方式为向上，Duty模式为 Active High。
    mcpwm_config_t pwm_config;
-   pwm_config.frequency = 200000;       // PWM频率
+   pwm_config.frequency = 20000;       // PWM频率
    pwm_config.cmpr_a = 50.0;          // 通道A初始占空比(%)
    pwm_config.cmpr_b = 50.0;          // 通道B初始占空比(%)
    pwm_config.counter_mode = MCPWM_UP_COUNTER;
@@ -133,8 +134,10 @@ void initPWM(){
     Ua = Ualpha + voltage_power_supply/2;
     Ub = (sqrt(3)*Ubeta - Ualpha)/2 + voltage_power_supply/2;
     Uc = (-Ualpha - sqrt(3)*Ubeta)/2 + voltage_power_supply/2;
-  
+
+
     setPwm(Ua, Ub, Uc);
+ 
   }
   
   
@@ -144,35 +147,66 @@ void initPWM(){
   }
   
   float _normalizeAngle(float angle){
-    float a = fmod(angle, 2*PI);
+    float a = fmod(angle+PI, 2*PI) - PI;
     return a >= 0 ? a : (a + 2*PI);
   }
 
-  float serialReceiveUserCommand() {
+  // float serialReceiveUserCommand() {
     
-    while (Serial.available()) {
-      // get the new byte:
-        Kp = Serial.parseFloat();
+  //   while (Serial.available()) {
+  //     // get the new byte:
+  //       Ki = Serial.parseFloat();
        
-            Serial.print("Kp = ");
-            Serial.println(Kp);
+  //           Serial.print("Ki = ");
+  //           Serial.println(Ki);
 
-      }
-      return Kp;
-    }
+  //     }
+  //     return Ki;
+  //   }
     
     void cali_zero_electric_angle(){
-        setPhaseVoltage(2.5, 0,_3PI_2);
+        setPhaseVoltage(4, 0,_3PI_2);
         delay(500);
         zero_electric_angle=_electricalAngle();
         setPhaseVoltage(0, 0,_3PI_2);
     }
 
 
-  void pos_closedLoop(float motor_target){
-    float err = motor_target - DIR*Tsensor.getAngleResult();
-    float target_Uq = constrain((Kp* err)*180/PI,-1.5,1.5);
-    setPhaseVoltage(target_Uq, 0, _electricalAngle());
-    Serial.print("Target Uq:");
-    Serial.println(target_Uq);
+    void pos_closedLoop(float motor_target){
+      unsigned long now_us = micros();
+      float Ts = (now_us - open_loop_timestamp)*1e-6f;
+      if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
+  
+      // 1) 记录当前角度
+      // float current_pos = DIR * Tsensor.getAngleResult();
+      static float filtered_angle = 0;
+      float alpha = 0.9; // 滤波系数 (0~1)
+      filtered_angle = alpha * filtered_angle + (1 - alpha) * Tsensor.getAngleResult();
+  
+      // 2) 计算位置误差 (目标 - 当前)
+      float err = motor_target - filtered_angle;
+      if (fabs(err) < 0.1) return; // 误差小于一定阈值就不调整电压
+      // 3) Tustin离散积分法（使用static，函数多次调用能记住值）
+      //    需要保存上一次误差 old_err 才能实现梯形积分
+      static float integral_err = 0.0f;
+      static float old_err = 0.0f;
+  
+      // Tustin：integral_err += 0.5 * Ts * (当前误差 + 上一次误差)
+      integral_err += 0.5f * Ts * (err + old_err);
+  
+      // 4) 防止积分失控 (Anti-Windup)
+      if (integral_err > WIND_UP)  integral_err = WIND_UP;
+      if (integral_err < -WIND_UP) integral_err = -WIND_UP;
+  
+      // 更新 old_err
+      old_err = err;
+      
+      // 5) 计算输出（P + I）
+      float target_Uq = constrain((Kp * err + Ki * integral_err),
+                                  -(voltage_power_supply/2),
+                                   (voltage_power_supply/2));
+  
+      setPhaseVoltage(target_Uq, 0, _electricalAngle());
+      open_loop_timestamp = now_us;
   }
+  
