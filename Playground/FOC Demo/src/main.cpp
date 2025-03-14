@@ -8,6 +8,7 @@
     [注意]：“Uq = voltage_power_supply / 3” 只是“固定给电机施加一个与电源电压成固定比例的电压幅值”，
     并没有和给定速度做任何算法关联。在这段演示代码里，它被写死成常数，以保证输出三相电压波形不会饱和或超出供电范围。
 ******************************************************************************/
+
 #include "Arduino.h"
 #include "driver/mcpwm.h"
 #include "soc/mcpwm_periph.h"
@@ -20,13 +21,15 @@ int VH = 18, VL = 23;
 int WH = 19, WL = 33;
 
 // 电源电压 (假设用于计算占空比)
-float voltage_power_supply = 8.0;
+float voltage_power_supply = 5.0;
 
 // 一些与开环控制相关的变量
 float shaft_angle = 0, open_loop_timestamp = 0;
 float zero_electric_angle = 0;
 float Ualpha, Ubeta = 0, Ua = 0, Ub = 0, Uc = 0;
 float dc_a = 0, dc_b = 0, dc_c = 0;
+
+int target_vel = 5;
 
 // 死区时长(微秒)。你可根据需求调整
 static const uint32_t DEADTIME_RISING  = 1;  // 上升沿死区
@@ -39,7 +42,7 @@ float _normalizeAngle(float angle);
 float velocityOpenloop(float target_velocity);
 void setPwm(float Ua, float Ub, float Uc);
 void setPhaseVoltage(float Uq, float Ud, float angle_el);
-
+float serialReceiveUserCommand();
 void initPWM();
 
 
@@ -58,7 +61,8 @@ void setup() {
 
 // =========== loop()：开环让电机以 5rad/s 旋转 ===========
 void loop() {
-  float _Uq = velocityOpenloop(40);  // 目标速度(示例)
+  serialReceiveUserCommand();
+  float _Uq = velocityOpenloop(target_vel);  // 目标速度(示例)
   Serial.print("Uq = ");
   Serial.println(_Uq);
 }
@@ -200,3 +204,18 @@ float _normalizeAngle(float angle){
   float a = fmod(angle, 2*PI);
   return a >= 0 ? a : (a + 2*PI);
 }
+
+float serialReceiveUserCommand() {
+    
+  while (Serial.available()) {
+    // get the new byte:
+    target_vel = Serial.parseInt();
+     
+
+
+    }
+    return target_vel;
+  }
+
+
+

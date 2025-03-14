@@ -53,6 +53,19 @@ int8_t TMAG5273::begin(uint8_t sensorAddress, TwoWire &wirePort)
     setXYAxisRange(TMAG5273_RANGE_40MT);
     setZAxisRange(TMAG5273_RANGE_40MT);
 
+    setConvAvg(TMAG5273_X16_CONVERSION);
+
+
+    // Choose new angle to calculate from
+    // Can calculate angles between XYX, YXY, YZY, and XZX
+    setMagneticChannel(TMAG5273_YXY_ENABLE);
+  
+    // Enable the angle calculation register
+    // Can choose between XY, YZ, or XZ priority
+    setAngleEn(TMAG5273_XY_ANGLE_CALCULATION);
+    setGlitchFilter(TMAG5273_GLITCH_ON);
+    setLowPower(TMAG5273_LOW_NOISE_MODE);
+
     // Check if there is any issue with the device status register
     if (getError() != 0)
     {
@@ -2636,7 +2649,7 @@ float TMAG5273::getAngleResult()
 
     // Add the two values together now
     finalVal = angleVal + decValue;
-    finalVal = (float)(finalVal/180)*PI;
+    finalVal = (finalVal/180)*PI;
     return finalVal;
 }
 

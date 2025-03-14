@@ -4,6 +4,7 @@
 #include "FOC.h"
 
 
+
 #define SCL_PIN 22          // ESP32 SCL
 #define SDA_PIN 21          // ESP32 SDA
 
@@ -42,6 +43,7 @@ void setup()
   // Can choose between XY, YZ, or XZ priority
   Tsensor.setAngleEn(TMAG5273_XY_ANGLE_CALCULATION);
   Tsensor.setGlitchFilter(TMAG5273_GLITCH_ON);
+  Tsensor.setLowPower(TMAG5273_LOW_NOISE_MODE);
 
   cali_zero_electric_angle();
   initPWM();
@@ -51,39 +53,28 @@ void setup()
 }
 
 
-float target_pos = 1.5;
+float target_pos = 3.14;
+
 float serialReceiveUserCommand() {
-    
   while (Serial.available()) {
-    // get the new byte:
     target_pos = Serial.parseFloat();
-     
-
-
     }
     return target_pos;
-  }
+}
 
+
+  float target_Uq = 0;
 
 void loop() 
 {
-    // // Checks if mag channels are on - turns on in setup
-    // if(Tsensor.getMagneticChannel() != 0) 
-    // {
-  
-      // float angle = Tsensor.getAngleResult();
-      // Serial.print("X: ");
-      // Serial.print(angle, 4);
-      // Serial.println("Rad");
-    // }-
-    // else
-    // {
-    //   // If there is an issue, stop the magnetic readings and restart sensor/example
-    //   Serial.println("Mag Channels disabled, stopping..");
-    //   while(1);
-    // }
-    // velocityOpenloop(15);
+    // float angle = Tsensor.getAngleResult();
+    // Serial.print("X: ");
+    // Serial.print(angle, 4);
+    // Serial.print(" Rad");
+
     
-    pos_closedLoop(target_pos);
+    target_Uq = pos_closedLoop(target_pos);
+    // Serial.print(" Uq: ");
+    // Serial.println(target_Uq);
     serialReceiveUserCommand();
 }

@@ -1,6 +1,6 @@
 #include "FOC.h"
 
-#define MOTOR_POLE_PAIR 8
+#define MOTOR_POLE_PAIR 7
 #define _3PI_2 4.71238898038f
 #define WIND_UP 12.0f
 #define _SQRT3_2 0.866025403784438f
@@ -11,7 +11,7 @@ int UH = 16, UL = 17;
 int VH = 18, VL = 23;
 int WH = 19, WL = 33;
 
-// 电源电压 (假设用于计算占空比)
+// 电源电压 (用于计算占空比)
 float voltage_power_supply = 5.0;
 
 // 一些与开环控制相关的变量
@@ -21,15 +21,15 @@ float Ualpha, Ubeta = 0, Ua = 0, Ub = 0, Uc = 0;
 float dc_a = 0, dc_b = 0, dc_c = 0;
 
 //**********************闭环控制****************************** */
-int DIR = 1;
-float Kp = 2.0;
+int DIR = -1;
+float Kp = 0.8;
 float Ki = 1.2;
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
 
 // 死区时长(微秒)。你可根据需求调整
-static const uint32_t DEADTIME_RISING  = 1;  // 上升沿死区
-static const uint32_t DEADTIME_FALLING = 1;  // 下降沿死区
+static const uint32_t DEADTIME_RISING  = 10;  // 上升沿死区
+static const uint32_t DEADTIME_FALLING = 10;  // 下降沿死区
 
 void initPWM(){
     // --- 1) 绑定 MCPWM 到对应引脚 ---
@@ -148,10 +148,9 @@ void initPWM(){
   }
   
   float _normalizeAngle(float angle){
-    float a = fmod(angle+PI, 2*PI) - PI;
+    float a = fmod(angle, 2*PI) ;
     return a >= 0 ? a : (a + 2*PI);
-  }
-
+  } 
   // float serialReceiveUserCommand() {
     
   //   while (Serial.available()) {
@@ -166,48 +165,88 @@ void initPWM(){
   //   }
     
     void cali_zero_electric_angle(){
-        setPhaseVoltage(4, 0,_3PI_2);
+        setPhaseVoltage(0.5*voltage_power_supply, 0,_3PI_2);
         delay(500);
         zero_electric_angle=_electricalAngle();
         setPhaseVoltage(0, 0,_3PI_2);
     }
 
 
-    void pos_closedLoop(float motor_target){
+    float output_ramp(float target, float last_target, float max_change_rate) {
       unsigned long now_us = micros();
-      float Ts = (now_us - open_loop_timestamp)*1e-6f;
-      if(Ts <= 0 || Ts > 0.5f) Ts = 1e-3f;
+      static unsigned long last_time_us = 0;
   
-      // 1) 记录当前角度
-      // float current_pos = DIR * Tsensor.getAngleResult();
+      // 计算时间间隔 Ts (单位: 秒)
+      float Ts = (now_us - last_time_us) * 1e-6f;
+      if (Ts <= 0 || Ts > 0.5f) Ts = 1e-3f; // 防止时间异常
+  
+      // 计算最大允许变化量
+      float max_delta = max_change_rate * Ts;
+  
+      // 计算目标变化量
+      float delta = target - last_target;
+  
+      // 限制变化速率
+      if (delta > max_delta) delta = max_delta;
+      if (delta < -max_delta) delta = -max_delta;
+  
+      // 更新 last_time_us
+      last_time_us = now_us;
+  
+      // 计算平滑后的目标值
+      return last_target + delta;
+  }
+  
+
+    float pos_closedLoop(float motor_target) {
+      unsigned long now_us = micros();
+      float Ts = (now_us - open_loop_timestamp) * 1e-6f;
+      if (Ts <= 0 || Ts > 0.5f) Ts = 1e-3f; // 防止时间异常
+  
+      // 1) 记录当前角度 (带滤波)
       static float filtered_angle = 0;
-      float alpha = 0.9; // 滤波系数 (0~1)
+      float alpha = 0.2; // 滤波系数 (0~1)
       filtered_angle = alpha * filtered_angle + (1 - alpha) * Tsensor.getAngleResult();
   
       // 2) 计算位置误差 (目标 - 当前)
       float err = motor_target - filtered_angle;
-      if (fabs(err) < 0.1) return; // 误差小于一定阈值就不调整电压
-      // 3) Tustin离散积分法（使用static，函数多次调用能记住值）
-      //    需要保存上一次误差 old_err 才能实现梯形积分
+  
+      // 3) Tustin离散积分法
       static float integral_err = 0.0f;
       static float old_err = 0.0f;
-  
-      // Tustin：integral_err += 0.5 * Ts * (当前误差 + 上一次误差)
       integral_err += 0.5f * Ts * (err + old_err);
   
       // 4) 防止积分失控 (Anti-Windup)
       if (integral_err > WIND_UP)  integral_err = WIND_UP;
       if (integral_err < -WIND_UP) integral_err = -WIND_UP;
-  
       // 更新 old_err
       old_err = err;
-      
-      // 5) 计算输出（P + I）
-      float target_Uq = constrain((Kp * err + Ki * integral_err),
-                                  -(voltage_power_supply/2),
-                                   (voltage_power_supply/2));
   
-      setPhaseVoltage(target_Uq, 0, _electricalAngle());
+      // 5) 计算输出 (P + I)
+      float raw_target_Uq = Kp * err + Ki * integral_err;
+      raw_target_Uq = constrain(raw_target_Uq, -(voltage_power_supply / 2), (voltage_power_supply / 2));
+  
+      // 6) 限制输出变化率 (防止电机电压突变)
+      static float last_target_Uq = 0;  // 记录上一次的目标电压
+      float max_change_rate = 0.5f; // 限制最大变化速率 V/s
+      float target_Uq = output_ramp(raw_target_Uq, last_target_Uq, max_change_rate);
+      if ((fabs(err) < 0.1)) integral_err = 0;
+      if (fabs(err) < 0.05) return -1; // 误差小于一定阈值就不调整电压
+      
+      // 7) 设置相电压
+      setPhaseVoltage(raw_target_Uq, 0, _electricalAngle());
+  
+      // 8) 更新时间戳和上次输出
       open_loop_timestamp = now_us;
+      last_target_Uq = target_Uq;
+
+      Serial.print("Uq: ");
+      Serial.print(raw_target_Uq);
+      Serial.print(", err: ");
+      Serial.print(err);
+      Serial.print(", integral_err: ");
+      Serial.println(integral_err);
+      
+      return raw_target_Uq;
   }
   
