@@ -22,8 +22,8 @@ float dc_a = 0, dc_b = 0, dc_c = 0;
 
 //**********************闭环控制****************************** */
 int DIR = -1;
-float Kp = 0.8;
-float Ki = 1.2;
+float Kp = 1.1;
+float Ki = 1.4;
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
 
@@ -172,32 +172,10 @@ void initPWM(){
     }
 
 
-    float output_ramp(float target, float last_target, float max_change_rate) {
-      unsigned long now_us = micros();
-      static unsigned long last_time_us = 0;
   
-      // 计算时间间隔 Ts (单位: 秒)
-      float Ts = (now_us - last_time_us) * 1e-6f;
-      if (Ts <= 0 || Ts > 0.5f) Ts = 1e-3f; // 防止时间异常
-  
-      // 计算最大允许变化量
-      float max_delta = max_change_rate * Ts;
-  
-      // 计算目标变化量
-      float delta = target - last_target;
-  
-      // 限制变化速率
-      if (delta > max_delta) delta = max_delta;
-      if (delta < -max_delta) delta = -max_delta;
-  
-      // 更新 last_time_us
-      last_time_us = now_us;
-  
-      // 计算平滑后的目标值
-      return last_target + delta;
-  }
-  
-
+/**
+ * 位置闭环，PI控制
+ */
     float pos_closedLoop(float motor_target) {
       unsigned long now_us = micros();
       float Ts = (now_us - open_loop_timestamp) * 1e-6f;
@@ -205,7 +183,7 @@ void initPWM(){
   
       // 1) 记录当前角度 (带滤波)
       static float filtered_angle = 0;
-      float alpha = 0.2; // 滤波系数 (0~1)
+      float alpha = 0.5; // 滤波系数 (0~1)
       filtered_angle = alpha * filtered_angle + (1 - alpha) * Tsensor.getAngleResult();
   
       // 2) 计算位置误差 (目标 - 当前)
@@ -226,10 +204,6 @@ void initPWM(){
       float raw_target_Uq = Kp * err + Ki * integral_err;
       raw_target_Uq = constrain(raw_target_Uq, -(voltage_power_supply / 2), (voltage_power_supply / 2));
   
-      // 6) 限制输出变化率 (防止电机电压突变)
-      static float last_target_Uq = 0;  // 记录上一次的目标电压
-      float max_change_rate = 0.5f; // 限制最大变化速率 V/s
-      float target_Uq = output_ramp(raw_target_Uq, last_target_Uq, max_change_rate);
       if ((fabs(err) < 0.1)) integral_err = 0;
       if (fabs(err) < 0.05) return -1; // 误差小于一定阈值就不调整电压
       
@@ -238,15 +212,7 @@ void initPWM(){
   
       // 8) 更新时间戳和上次输出
       open_loop_timestamp = now_us;
-      last_target_Uq = target_Uq;
 
-      Serial.print("Uq: ");
-      Serial.print(raw_target_Uq);
-      Serial.print(", err: ");
-      Serial.print(err);
-      Serial.print(", integral_err: ");
-      Serial.println(integral_err);
-      
       return raw_target_Uq;
   }
   
