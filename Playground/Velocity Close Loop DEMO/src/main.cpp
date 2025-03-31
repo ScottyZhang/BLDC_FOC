@@ -53,28 +53,13 @@ void setup()
 }
 
 
-float target_pos = 3.14;
+float velocity = 0.0;
 
-float serialReceiveUserCommand() {
-  while (Serial.available()) {
-    target_pos = Serial.parseFloat();
-    }
-    return target_pos;
-}
-
-
-  float target_Uq = 0;
 
 void loop() 
 {
-    // float angle = Tsensor.getAngleResult();
-    // Serial.print("X: ");
-    // Serial.print(angle, 4);
-    // Serial.print(" Rad");
-
-    
-    target_Uq = pos_closedLoop(target_pos);
-    // Serial.print(" Uq: ");
-    // Serial.println(target_Uq);
-    serialReceiveUserCommand();
+  Tsensor.Sensor_update();
+  velocity = Tsensor.getVelocityResult();
+  Serial.print("Velocity: ");
+  Serial.println(velocity);
 }

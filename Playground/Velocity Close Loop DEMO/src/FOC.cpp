@@ -151,18 +151,7 @@ void initPWM(){
     float a = fmod(angle, 2*PI) ;
     return a >= 0 ? a : (a + 2*PI);
   } 
-  // float serialReceiveUserCommand() {
-    
-  //   while (Serial.available()) {
-  //     // get the new byte:
-  //       Ki = Serial.parseFloat();
-       
-  //           Serial.print("Ki = ");
-  //           Serial.println(Ki);
 
-  //     }
-  //     return Ki;
-  //   }
     
     void cali_zero_electric_angle(){
         setPhaseVoltage(0.5*voltage_power_supply, 0,_3PI_2);
