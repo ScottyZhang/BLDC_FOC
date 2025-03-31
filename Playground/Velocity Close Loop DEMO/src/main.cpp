@@ -54,12 +54,17 @@ void setup()
 
 
 float velocity = 0.0;
-
+float target_Uq = 0.0;
 
 void loop() 
 {
-  Tsensor.Sensor_update();
-  velocity = Tsensor.getVelocityResult();
-  Serial.print("Velocity: ");
-  Serial.println(velocity);
+  // Tsensor.Sensor_update();
+  // velocity = Tsensor.getVelocityResult();
+  // Serial.print("Velocity: ");
+  // Serial.println(velocity);
+  // delay(100);
+
+  target_Uq = vel_closedLoop(5);
+  // target_Uq = pos_closedLoop(3.14);
+
 }

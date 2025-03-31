@@ -55,6 +55,17 @@ int8_t TMAG5273::begin(uint8_t sensorAddress, TwoWire &wirePort)
     setXYAxisRange(TMAG5273_RANGE_40MT);
     setZAxisRange(TMAG5273_RANGE_40MT);
 
+    // 校准真实角度
+    getAngleResult(); 
+    delayMicroseconds(1);
+    vel_angle_prev = getAngleResult();  
+    vel_angle_prev_ts = micros();
+    delay(1);
+    getAngleResult();
+    delayMicroseconds(1);
+    angle_prev = getAngleResult(); 
+    angle_prev_ts = micros();
+
     // Check if there is any issue with the device status register
     if (getError() != 0)
     {
@@ -2644,6 +2655,7 @@ float TMAG5273::getAngleResult()
 
 
 
+//***************************电机速度************************/
 void TMAG5273::Sensor_update(){
     float val = getAngleResult();
     angle_prev_ts = micros();
@@ -2651,6 +2663,22 @@ void TMAG5273::Sensor_update(){
     // 圈数检测
     if(abs(d_angle) > (0.8f*_2PI) ) full_rotations += ( d_angle > 0 ) ? -1 : 1; 
     angle_prev = val;
+
+    // Serial.print("Angle: ");
+    // Serial.print(val);
+    // Serial.print(" | ");
+    // Serial.print("d_angle: ");
+    // Serial.print(d_angle);
+    // Serial.print(" | ");
+    // Serial.print("Rotation: ");
+    // Serial.println(full_rotations);
+    // delay(100);
+}
+
+
+//** 返回电机旋转角度，并且有额外圈数。注意与getAngleResult()区分 */
+float TMAG5273::getAngle(){
+    return (float)full_rotations * _2PI + angle_prev;
 }
 
 /// @brief Returns the Velocity of the Motor.
@@ -2660,14 +2688,18 @@ float TMAG5273::getVelocityResult(){
     float Ts = (angle_prev_ts - vel_angle_prev_ts)*1e-6;
     // 快速修复奇怪的情况（微溢出）
     if(Ts <= 0) Ts = 1e-3f;
+
     // 速度计算
-    float vel = ( (float)(full_rotations - vel_full_rotations)*_2PI + (angle_prev - vel_angle_prev) ) / Ts;    
+    float vel = ( (float)(full_rotations - vel_full_rotations)*_2PI + (angle_prev - vel_angle_prev) ) / Ts;  
+
     // 保存变量以待将来使用
     vel_angle_prev = angle_prev;
     vel_full_rotations = full_rotations;
     vel_angle_prev_ts = angle_prev_ts;
     return vel;
 }
+
+/*************************************************************/
 
 /// @brief Returns the resultant vector magnitude (during angle
 ///  measurement) result. This value should be constant during 360

@@ -103,6 +103,7 @@ class TMAG5273
     float getMagnitudeResult(); // Uses the MAGNITUDE_RESULT Register
 
     void  Sensor_update();
+    float getAngle();
     float getVelocityResult();  // Uses getAngleResult to get Velocity
 
     uint8_t getInterruptPinStatus(); // Returns the interrupt pin status
@@ -110,8 +111,8 @@ class TMAG5273
     uint8_t getDeviceStatus(); // Returns the error detected
     int8_t getError();         // Returns an error code (0 is success, negative is failure, positive is warning)
     
-    float angle_prev=0; // 最后一次调用 getSensorAngle() 的输出结果，用于得到完整的圈数和速度
-    long angle_prev_ts=0; // 上次调用 getAngle 的时间戳
+    float angle_prev=0; // 最后一次调用 getAngleResult() 的输出结果，用于得到完整的圈数和速度
+    long angle_prev_ts=0; // 上次调用 getAngleResult 的时间戳
     float vel_angle_prev=0; // 最后一次调用 getVelocity 时的角度
     long vel_angle_prev_ts=0; // 最后速度计算时间戳
     int32_t full_rotations=0; // 总圈数计数
