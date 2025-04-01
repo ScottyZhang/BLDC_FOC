@@ -26,7 +26,7 @@ float Kp = 1.1;
 float Ki = 1.4;
 
 float Kp_vel = -0.8;
-float Ki_vel = -1.0;
+float Ki_vel = -0.5;
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
 
