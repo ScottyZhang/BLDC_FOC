@@ -26,10 +26,11 @@ int DIR = -1;
 float Kp = 1.1;
 float Ki = 1.4;
 
-float Kp_vel = 1.2;
-float Ki_vel = 0.8;
+float Kp_vel = 1.7;
+float Ki_vel = 0.05;
 
-LowPassFilter filter(0.7f);
+LowPassFilter filter(0.5f);
+LowPassFilter pos_filter(0.5f);
 
 
 extern TMAG5273 Tsensor; // Initialize hall-effect sensor;
@@ -160,12 +161,12 @@ void initPWM(){
   } 
 
     
-    void cali_zero_electric_angle(){
-        setPhaseVoltage(0.5*voltage_power_supply, 0,_3PI_2);
-        delay(500);
-        zero_electric_angle=_electricalAngle();
-        setPhaseVoltage(0, 0,_3PI_2);
-    }
+  void cali_zero_electric_angle(){
+      setPhaseVoltage(0.5*voltage_power_supply, 0,_3PI_2);
+      delay(500);
+      zero_electric_angle=_electricalAngle();
+      setPhaseVoltage(0, 0,_3PI_2);
+  }
 
 
   
@@ -180,8 +181,8 @@ void initPWM(){
       // 1) 记录当前角度 (带滤波)
       static float filtered_angle = 0;
       float alpha = 0.5; // 滤波系数 (0~1)
-      // filtered_angle = alpha * filtered_angle + (1 - alpha) * Tsensor.getAngleResult();
-      filtered_angle = Tsensor.getAngleResult();
+      filtered_angle = alpha * filtered_angle + (1 - alpha) * Tsensor.getAngleResult();
+      // filtered_angle = pos_filter(Tsensor.getAngleResult());
   
       // 2) 计算位置误差 (目标 - 当前)
       float err = motor_target - filtered_angle;
@@ -219,7 +220,7 @@ void initPWM(){
     float Ts = (now_us - open_loop_timestamp) * 1e-6f;
     if (Ts <= 0 || Ts > 0.5f) Ts = 1e-3f; // 防止时间异常
 
-    Tsensor.Sensor_update();
+    // Tsensor.Sensor_update();
     // 1) 记录当前速度
     float vel = Tsensor.getVelocityResult();
 
@@ -236,18 +237,18 @@ void initPWM(){
     static float old_err = 0.0f;
     integral_err += 0.5f * Ts * (err + old_err);
 
-    // 4) 防止积分失控 (Anti-Windup)
-    if (integral_err > WIND_UP)  integral_err = WIND_UP;
-    if (integral_err < -WIND_UP) integral_err = -WIND_UP;
+    // // 4) 防止积分失控 (Anti-Windup)
+    // if (integral_err > WIND_UP)  integral_err = WIND_UP;
+    // if (integral_err < -WIND_UP) integral_err = -WIND_UP;
     // 更新 old_err
-    old_err = err;
+    // old_err = err;
 
     // 5) 计算输出 (P + I)
     float raw_target_Uq = Kp_vel * err + Ki_vel * integral_err;
     raw_target_Uq = constrain(raw_target_Uq, -(voltage_power_supply / 2), (voltage_power_supply / 2));
 
-    if ((fabs(err) < 0.1)) integral_err = 0;
-    if (fabs(err) < 0.05) return -1; // 误差小于一定阈值就不调整电压
+    // if ((fabs(err) < 0.1)) integral_err = 0;
+    // if (fabs(err) < 0.05) return -1; // 误差小于一定阈值就不调整电压
 
 
 
@@ -258,4 +259,10 @@ void initPWM(){
     open_loop_timestamp = now_us;
 
     return raw_target_Uq;
+  }
+
+  void vel_UserCommand(float *target_vel){
+    while(Serial.available()){
+        *target_vel = (float)Serial.parseFloat();
+    }
   }
