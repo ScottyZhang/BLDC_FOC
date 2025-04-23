@@ -15,7 +15,6 @@ void setPhaseVoltage(float Uq, float Ud, float angle_el);
 
 void initPWM();
 void cali_zero_electric_angle();
-// float serialReceiveUserCommand();
 float pos_closedLoop(float motor_target);
 float vel_closedLoop(float motor_target_vel);
 void vel_UserCommand(float *target_vel);
