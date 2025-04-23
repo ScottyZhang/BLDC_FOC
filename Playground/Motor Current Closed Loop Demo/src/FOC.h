@@ -19,4 +19,7 @@ float pos_closedLoop(float motor_target);
 float vel_closedLoop(float motor_target_vel);
 void vel_UserCommand(float *target_vel);
 
+void start_smart_knob(float damping_coefficient);
+
+
 #endif

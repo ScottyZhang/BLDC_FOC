@@ -57,7 +57,7 @@ void setup()
 }
 
 
-float velocity = 0.3;
+float velocity = 0.0;
 float target_Uq = 0.0;
 float currents[3] = {0,0,0}; //{u,v,w}
 
@@ -71,8 +71,11 @@ void loop()
   // Serial.println(velocity);
   // delay(100);
 
-  target_Uq = vel_closedLoop(velocity);
-  vel_UserCommand(&velocity);
+  // target_Uq = vel_closedLoop(velocity);
+  // vel_UserCommand(&velocity);
+
+  start_smart_knob(0.2);
+
 
   // target_Uq = pos_closedLoop(3.14);
 

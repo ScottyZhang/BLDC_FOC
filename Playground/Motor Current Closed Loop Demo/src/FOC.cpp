@@ -26,10 +26,13 @@ int DIR = -1;
 float Kp = 1.1;
 float Ki = 1.4;
 
-float Kp_vel = 1.7;
-float Ki_vel = 0.05;
+// float Kp_vel = 1.7;
+float Kp_vel = 0.3;
+// float Ki_vel = 0.05;
+float Ki_vel = 0.0;
 
-LowPassFilter filter(0.5f);
+
+LowPassFilter filter(0.6f);
 LowPassFilter pos_filter(0.5f);
 
 
@@ -260,6 +263,22 @@ void initPWM(){
 
     return raw_target_Uq;
   }
+
+/*******************************带阻尼旋钮效果***********************************/
+  void start_smart_knob(float damping_coefficient){
+    unsigned long now_us = micros();
+    float Ts = (now_us - open_loop_timestamp) * 1e-6f;
+    if (Ts <= 0 || Ts > 0.5f) Ts = 1e-3f; // 防止时间异常
+
+    float vel = Tsensor.getVelocityResult();
+    vel = filter(vel);
+    
+    float torque_target =  -damping_coefficient * vel;
+
+    setPhaseVoltage(torque_target, 0, _electricalAngle());
+  }
+
+/*******************************************************************************/
 
   void vel_UserCommand(float *target_vel){
     while(Serial.available()){
