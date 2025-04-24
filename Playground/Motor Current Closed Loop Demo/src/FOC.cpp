@@ -27,12 +27,12 @@ float Kp = 1.1;
 float Ki = 1.4;
 
 // float Kp_vel = 1.7;
-float Kp_vel = 0.3;
+float Kp_vel = 0.15;
 // float Ki_vel = 0.05;
 float Ki_vel = 0.0;
 
 
-LowPassFilter filter(0.6f);
+LowPassFilter filter(0.01f);
 LowPassFilter pos_filter(0.5f);
 
 

@@ -34,7 +34,7 @@ void setup()
   }
 
   
-  Tsensor.setConvAvg(TMAG5273_X8_CONVERSION);
+  Tsensor.setConvAvg(TMAG5273_X32_CONVERSION);
 
 
   // Choose new angle to calculate from
@@ -71,10 +71,10 @@ void loop()
   // Serial.println(velocity);
   // delay(100);
 
-  // target_Uq = vel_closedLoop(velocity);
+  target_Uq = vel_closedLoop(velocity);
   // vel_UserCommand(&velocity);
 
-  start_smart_knob(0.2);
+  // start_smart_knob(0.2);
 
 
   // target_Uq = pos_closedLoop(3.14);
@@ -86,7 +86,7 @@ void loop()
   // Serial.print(" | ");
   // Serial.print("Velocity: ");
   // Serial.println(vel);
-  // delay(100);
+  // delay(5);
 
   // currents[0] = ISensor.getUCurrentValue();
   // currents[1] = ISensor.getVCurrentValue();
